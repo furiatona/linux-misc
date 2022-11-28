@@ -19,9 +19,9 @@ HW_RAID_INFO=$(/opt/MegaRAID/MegaCli/MegaCli64 -LDInfo -Lall -aAll)
 NAME=$(echo "$HW_RAID_INFO" | grep Name | awk '{print $NF}' | sed 's/://g')
 STATUS=$(echo "$HW_RAID_INFO" | grep State | awk '{print $NF}' | sed 's/://g')
 
-if [ $STATUS == "Optimal" ]
+if [ $STATUS == "Optimal" ] ; then
     STATUS=1
-elif
+else
     STATUS=0
 fi
 
