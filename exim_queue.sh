@@ -8,17 +8,6 @@
 # [root@example.local ~]# exim -bpc
 # 55
 
-EXIM_CMD=$(exim -bpc)
-CMD_TIMEOUT="timeout 5"
+EXIM_QCOUNT=$(timeout 5 exim -bpc)
 
-$CMD_TIMEOUT exim -bpc > /dev/null
-exit_status=$?
-if [[ $exit_status -eq 124 ]]; then
-cat <<EOS
-exim_queue 999999999
-EOS
-else
-cat <<EOS
-exim_queue $EXIM_CMD
-EOS
-fi
+exim_queue $EXIM_QCOUNT
