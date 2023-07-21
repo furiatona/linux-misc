@@ -1,3 +1,5 @@
+-- access by lua
+
 local country = ngx.var.geoip_country_code
 local locale_param = ngx.var.arg_locale
 if locale_param == nil and country ~= nil then
