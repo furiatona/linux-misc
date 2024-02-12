@@ -66,6 +66,7 @@ if [ $nvme_count -ne 0 ]; then
     for nvme in $nvme_list; do
         nvme_status=$(smartctl -a $nvme | grep Critical\ Warning | awk -F': ' '{print $2}' | awk '{$1=$1;print}')
         nvme_util=$(smartctl -a $nvme | grep Percentage | awk -F': ' '{print $2}' | awk '{$1=$1;print}' | tr -d '%')
+        nvme_lifetime=$((100 - $nvme_util))
         if [ $nvme_status != "0x00" ]; then
             nvme_disk_avail=0
         else
@@ -73,7 +74,7 @@ if [ $nvme_count -ne 0 ]; then
         fi
 cat <<EOS
 nvme_disk_avail{name="$nvme"} $nvme_disk_avail
-nvme_disk_util{name="$nvme"} $nvme_util
+nvme_disk_util{name="$nvme"} $nvme_lifetime
 EOS
     done
 fi
