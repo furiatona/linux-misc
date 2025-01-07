@@ -3,6 +3,9 @@
 # Author: Dheny @furiatona on GitHub
 # Bash script to check port status, configure firewall, or test network speed.
 # Supports multiple Linux distros and installs missing dependencies if needed.
+#
+# Usage: bash utilities.sh
+#        bash <(curl -s https://raw.githubusercontent.com/furiatona/linux-misc/refs/heads/main/utilities.sh) 
 
 # Colors for better readability
 RED='\033[0;31m'
@@ -15,6 +18,10 @@ RESET='\033[0m'
 # Utility function for logging
 log() {
     echo -e "${BLUE}[INFO]${RESET} $1"
+}
+
+warning() {
+    echo -e "${YELLOW}[WARNING]${RESET} $1"
 }
 
 error() {
@@ -179,7 +186,7 @@ elif [ "$choice" == "2" ]; then
         if (( $(echo "$speed_value >= 30" | awk '{print ($1 >= 30)}') )); then
             success "Network speed test completed: ${speed_value} MB/s. It looks satisfactory."
         else
-            error "Network speed test completed: ${speed_value} MB/s. Please contact support if the speed is insufficient."
+            warning "Network speed test completed: ${speed_value} MB/s. Please contact support if the speed is insufficient."
         fi
     else
         error "Failed to determine network speed."
