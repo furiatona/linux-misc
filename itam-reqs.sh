@@ -2,9 +2,9 @@
 
 # Script Name: ITAM Server Readiness Checker
 # Author: furiatona
-# Version: 2.1
+# Version: 3.1
 # Date: August 15, 2025
-# Description: Periodic server readiness checks with documentation links for warnings.
+# Description: Periodic server readiness checks with consistent documentation output
 # Usage: Run as root: sudo ./itam-reqs.sh
 
 # Exit on unset variables, pipe failures
@@ -19,11 +19,66 @@ CYAN='\033[0;36m'
 PURPLE='\033[0;35m'
 NC='\033[0m' # No Color
 
+# Required PHP version
+MIN_PHP_VERSION="8.0"
+REQUIRED_PHP_MODULES=(
+    "curl"
+    "ldap"
+    "mysql"
+    "gd"
+    "xml"
+    "mbstring"
+    "zip"
+    "bcmath"
+    "redis"
+)
+
+# Required dependencies
+REQUIRED_DEPS=(
+    "apt-utils"
+    "apache2"
+    "apache2-bin"
+    "libapache2-mod-php8.3"
+    "php8.3-curl"
+    "php8.3-ldap"
+    "php8.3-mysql"
+    "php8.3-gd"
+    "php8.3-xml"
+    "php8.3-mbstring"
+    "php8.3-zip"
+    "php8.3-bcmath"
+    "php8.3-redis"
+    "php-memcached"
+    "patch"
+    "curl"
+    "wget"
+    "vim"
+    "git"
+    "cron"
+    "mysql-client"
+    "supervisor"
+    "gcc"
+    "make"
+    "autoconf"
+    "libc-dev"
+    "libldap-common"
+    "pkg-config"
+    "php8.3-dev"
+    "ca-certificates"
+    "unzip"
+    "dnsutils"
+)
+
 # Check results storage
 declare -A CHECK_RESULTS
 declare -A CHECK_MESSAGES
-declare -A DOC_LINKS  # Store documentation links for warnings
-declare -a CHECK_ORDER=("OS" "CPU" "MEMORY" "DISK" "DOCKER" "COMPOSE" "INTERNET" "PUBLIC_IP" "FIREWALL" "SECURITY" "UPDATES" "SSH" "TIME" "BACKUP" "CERTBOT")
+declare -A DOC_LINKS
+declare -a CHECK_ORDER=(
+    "OS" "CPU" "MEMORY" "DISK" "PHP" "PHP_MODS" "MYSQL" 
+    "DEPS" "DOCKER" "COMPOSE" "INTERNET" "PUBLIC_IP" 
+    "FIREWALL" "SECURITY" "UPDATES" "SSH" "TIME" 
+    "BACKUP" "CERTBOT"
+)
 
 # Logging function
 log() {
@@ -54,6 +109,11 @@ record_check() {
     local message="$3"
     CHECK_RESULTS["$id"]="$status"
     CHECK_MESSAGES["$id"]="$message"
+}
+
+# Compare version numbers
+version_ge() {
+    printf '%s\n%s\n' "$2" "$1" | sort -V -C
 }
 
 # Check internet connectivity
@@ -136,7 +196,90 @@ perform_checks() {
         add_doc_link "$check_id" "https://ubuntu.com/server/docs/storage-expansion"
     fi
 
-    # Check 5: Docker
+    # Check 5: PHP Version
+    check_id="PHP"
+    if command_exists php; then
+        php_version=$(php -r 'echo PHP_VERSION;' 2>/dev/null)
+        if [ -n "$php_version" ]; then
+            if version_ge "$php_version" "$MIN_PHP_VERSION"; then
+                record_check "$check_id" "PASS" "PHP version: $php_version (>=${MIN_PHP_VERSION} required)"
+                log SUCCESS "PHP version $php_version meets requirement."
+            else
+                record_check "$check_id" "FAIL" "PHP version: $php_version (need ${MIN_PHP_VERSION}+)"
+                log WARN "Insufficient PHP version: Detected $php_version (minimum required: ${MIN_PHP_VERSION})."
+                add_doc_link "$check_id" "https://www.php.net/manual/en/install.php"
+            fi
+        else
+            record_check "$check_id" "FAIL" "Unable to determine PHP version"
+            log WARN "Unable to determine PHP version."
+            add_doc_link "$check_id" "https://www.php.net/manual/en/install.php"
+        fi
+    else
+        record_check "$check_id" "FAIL" "PHP not installed"
+        log WARN "PHP is not installed."
+        add_doc_link "$check_id" "https://www.php.net/manual/en/install.php"
+    fi
+
+    # Check 6: PHP Modules
+    check_id="PHP_MODS"
+    if [ "${CHECK_RESULTS[PHP]}" == "PASS" ]; then
+        missing_modules=()
+        for module in "${REQUIRED_PHP_MODULES[@]}"; do
+            if ! php -m | grep -iq "^${module}$"; then
+                missing_modules+=("$module")
+            fi
+        done
+        
+        if [ ${#missing_modules[@]} -eq 0 ]; then
+            record_check "$check_id" "PASS" "All required PHP modules installed"
+            log SUCCESS "All required PHP modules are installed."
+        else
+            record_check "$check_id" "WARN" "Missing PHP modules: ${missing_modules[*]}"
+            log WARN "Missing PHP modules: ${missing_modules[*]}"
+            add_doc_link "$check_id" "https://www.php.net/manual/en/extensions.php"
+        fi
+    else
+        record_check "$check_id" "SKIP" "PHP not available - skipping module check"
+        log INFO "Skipping PHP module check due to PHP unavailability"
+    fi
+
+    # Check 7: MySQL Version
+    check_id="MYSQL"
+    if command_exists mysql; then
+        mysql_version=$(mysql --version 2>/dev/null | awk '{print $3}' | sed 's/,//')
+        if [[ "$mysql_version" == 8.* ]]; then
+            record_check "$check_id" "PASS" "MySQL version: $mysql_version (8.x required)"
+            log SUCCESS "MySQL version $mysql_version meets requirement."
+        else
+            record_check "$check_id" "FAIL" "MySQL version: $mysql_version (need 8.x)"
+            log WARN "Incompatible MySQL version: Detected $mysql_version (required: 8.x)."
+            add_doc_link "$check_id" "https://dev.mysql.com/doc/mysql-apt-repo-quick-guide/en/"
+        fi
+    else
+        record_check "$check_id" "FAIL" "MySQL not installed"
+        log WARN "MySQL is not installed."
+        add_doc_link "$check_id" "https://dev.mysql.com/doc/mysql-apt-repo-quick-guide/en/"
+    fi
+
+    # Check 8: System Dependencies
+    check_id="DEPS"
+    missing_deps=()
+    for dep in "${REQUIRED_DEPS[@]}"; do
+        if ! dpkg -l "$dep" 2>/dev/null | grep -q "^ii"; then
+            missing_deps+=("$dep")
+        fi
+    done
+    
+    if [ ${#missing_deps[@]} -eq 0 ]; then
+        record_check "$check_id" "PASS" "All required dependencies installed"
+        log SUCCESS "All required dependencies are installed."
+    else
+        record_check "$check_id" "WARN" "Missing dependencies: ${#missing_deps[@]} packages"
+        log WARN "Missing dependencies: ${missing_deps[*]}"
+        add_doc_link "$check_id" "https://ubuntu.com/server/docs/package-management"
+    fi
+
+    # Check 9: Docker
     check_id="DOCKER"
     if command_exists docker; then
         docker_version=$(docker --version | awk '{print $3}' | sed 's/,//')
@@ -148,7 +291,7 @@ perform_checks() {
         add_doc_link "$check_id" "https://docs.docker.com/engine/install/ubuntu/"
     fi
 
-    # Check 6: Docker Compose
+    # Check 10: Docker Compose
     check_id="COMPOSE"
     if command_exists docker-compose; then
         compose_version=$(docker-compose --version | awk '{print $3}' | sed 's/,//')
@@ -164,10 +307,10 @@ perform_checks() {
         add_doc_link "$check_id" "https://docs.docker.com/compose/install/"
     fi
 
-    # Check 7: Internet Connectivity
+    # Check 11: Internet Connectivity
     check_internet
 
-    # Check 8: Public IP
+    # Check 12: Public IP
     check_id="PUBLIC_IP"
     if [ "${CHECK_RESULTS[INTERNET]}" == "PASS" ]; then
         external_ip=$(curl -s --max-time 5 ifconfig.me 2>/dev/null || echo "unknown")
@@ -190,7 +333,7 @@ perform_checks() {
         log INFO "Skipping public IP check due to internet unavailability"
     fi
 
-    # Check 9: Firewall
+    # Check 13: Firewall
     check_id="FIREWALL"
     if command_exists ufw; then
         if ufw status | grep -q "Status: active"; then
@@ -216,7 +359,7 @@ perform_checks() {
         add_doc_link "$check_id" "https://ubuntu.com/server/docs/security-firewall"
     fi
 
-    # Check 10: AppArmor/SELinux
+    # Check 14: AppArmor/SELinux
     check_id="SECURITY"
     if command_exists aa-status; then
         if aa-status | grep -q "apparmor module is loaded"; then
@@ -242,7 +385,7 @@ perform_checks() {
         add_doc_link "$check_id" "https://ubuntu.com/server/docs/security-apparmor"
     fi
 
-    # Check 11: Automatic Updates
+    # Check 15: Automatic Updates
     check_id="UPDATES"
     if [ -f /etc/apt/apt.conf.d/20auto-upgrades ]; then
         if grep -q "APT::Periodic::Unattended-Upgrade \"1\";" /etc/apt/apt.conf.d/20auto-upgrades; then
@@ -259,7 +402,7 @@ perform_checks() {
         add_doc_link "$check_id" "https://ubuntu.com/server/docs/package-management"
     fi
 
-    # Check 12: SSH Hardening
+    # Check 16: SSH Hardening
     check_id="SSH"
     if [ -f /etc/ssh/sshd_config ]; then
         if grep -q "^PermitRootLogin no" /etc/ssh/sshd_config; then
@@ -275,7 +418,7 @@ perform_checks() {
         log INFO "SSH configuration file not found"
     fi
 
-    # Check 13: Time Synchronization
+    # Check 17: Time Synchronization
     check_id="TIME"
     if command_exists timedatectl; then
         if timedatectl status | grep -q "NTP service: active"; then
@@ -291,7 +434,7 @@ perform_checks() {
         log INFO "Time synchronization not checked (timedatectl missing)"
     fi
 
-    # Check 14: Backup Configuration
+    # Check 18: Backup Configuration
     check_id="BACKUP"
     if [ -d /etc/cron.daily ] || [ -d /etc/cron.hourly ]; then
         backup_jobs=$(find /etc/cron.{daily,hourly} -type f 2>/dev/null | wc -l)
@@ -308,7 +451,7 @@ perform_checks() {
         log INFO "Cron directories not found"
     fi
 
-    # Check 15: Certbot (SSL)
+    # Check 19: Certbot (SSL)
     check_id="CERTBOT"
     if command_exists certbot; then
         record_check "$check_id" "PASS" "Certbot installed"
